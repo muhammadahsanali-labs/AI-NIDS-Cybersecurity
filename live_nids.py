@@ -2,10 +2,11 @@ import time
 import pandas as pd
 import joblib
 from scapy.all import sniff, IP
+from xai_engine import generate_evidence  # Phase 10 Module
 
 print("[*] Loading Multi-Class AI-NIDS Engine...")
 model = joblib.load('nids_model.pkl')
-print("[+] Model Active with Risk Scoring & Heuristic Smoothing Logic!")
+print("[+] Model Active with Phase 10 Explainable AI (XAI) Logic!")
 
 window_start = time.time()
 window_packets = 0
@@ -28,10 +29,8 @@ def process_and_classify(packet):
         window_packets += 1
         window_bytes += len(packet)
         
-        # Prevent micro-time fraction division spikes on packet 1
-        effective_elapsed = max(elapsed, 0.05)  # minimum 50ms floor for accurate rate
+        effective_elapsed = max(elapsed, 0.05)
         bytes_per_sec = window_bytes / effective_elapsed
-        
         dest_port = packet[IP].dport if hasattr(packet[IP], 'dport') else 80
         
         flow_features = pd.DataFrame([{
@@ -41,14 +40,16 @@ def process_and_classify(packet):
             'Flow_Bytes_s': bytes_per_sec
         }])
         
-        # Predict Attack Category
         attack_type = model.predict(flow_features)[0]
         
-        # Heuristic Safety Filter: Ignore single-packet isolated micro spikes
+        # Heuristic Safety Filter
         if window_packets < 2 and attack_type == 'PortScan':
             attack_type = 'Normal'
             
-        # Assign Severity & Risk Level
+        # Phase 10: Generate XAI Evidence
+        evidence_text = generate_evidence(attack_type, dest_port, window_packets, bytes_per_sec)
+        
+        # Assign Alert Status
         if attack_type == 'Normal':
             status = "✅ NORMAL (LOW RISK)"
         elif attack_type == 'PortScan':
@@ -58,7 +59,8 @@ def process_and_classify(packet):
         else:
             status = f"⚡ UNKNOWN ({attack_type})"
         
-        print(f"[LIVE INFERENCE] Target Port: {dest_port:<5} | Pkts: {window_packets:<3} | Rate: {bytes_per_sec:<8.1f} B/s | Alert: {status}")
+        print(f"\n[LIVE INFERENCE] Target Port: {dest_port:<5} | Pkts: {window_packets:<3} | Alert: {status}")
+        print(f" └─[XAI EVIDENCE]: {evidence_text}")
 
 print("\n[*] Sniffing Live Traffic Across All Interfaces... (Press Ctrl+C to stop)")
 sniff(iface=None, prn=process_and_classify)
